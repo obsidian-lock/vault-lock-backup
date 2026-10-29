@@ -1,0 +1,36 @@
+name: Bug report
+description: Something doesn't work as documented.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Security issues: please don't file them here. Use [private vulnerability reporting](https://github.com/obsidian-lock/vault-lock-backup/security/advisories/new) instead.
+        Never paste your WebDAV password, URL credentials or the plugin's `data.json`.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: input
+    id: plugin-version
+    attributes:
+      label: Plugin version
+      placeholder: "1.0.0"
+    validations:
+      required: true
+  - type: input
+    id: obsidian-version
+    attributes:
+      label: Obsidian version and operating system
+      placeholder: "Obsidian 1.9.x on Windows 11"
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Console output
+      description: Open the developer console (Ctrl+Shift+I / Cmd+Opt+I) and paste lines starting with `[VLB`. Remove anything private.
+      render: text

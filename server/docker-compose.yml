@@ -10,9 +10,9 @@ services:
       - ./config.yml:/config.yml:ro
       - ./data:/data
     networks:
-      - edge          # the network edge-caddy is on; adjust the name below
+      - edge          # the Docker network your reverse proxy is on
 
 networks:
   edge:
     external: true
-    name: edge        # <- replace with the actual edge-caddy network name
+    name: edge        # <- replace with that network's actual name

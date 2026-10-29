@@ -1,19 +1,29 @@
 {
   "name": "vault-lock-backup",
   "version": "1.0.0",
-  "description": "",
+  "description": "Obsidian plugin: passphrase lock screen, a private folder hidden while locked, and a one-way WebDAV backup.",
+  "keywords": [
+    "obsidian",
+    "obsidian-plugin",
+    "webdav",
+    "backup"
+  ],
+  "homepage": "https://github.com/obsidian-lock/vault-lock-backup#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/obsidian-lock/vault-lock-backup.git"
+  },
+  "license": "MIT",
+  "author": "Andre",
+  "private": true,
   "scripts": {
     "build": "node esbuild.config.mjs",
     "check": "tsc --noEmit -p tsconfig.json"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
   "devDependencies": {
     "@types/node": "^26.6.5",
     "esbuild": "^0.28.2",
     "obsidian": "^1.14.4",
     "typescript": "^7.0.2"
-  },
-  "private": true
+  }
 }
