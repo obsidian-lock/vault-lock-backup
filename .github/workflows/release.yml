@@ -1,5 +1,6 @@
 # Push a tag that matches manifest.json's version (e.g. `git tag 1.0.1 && git push origin main 1.0.1`)
 # and this builds main.js and publishes the release BRAT installs from.
+# The release notes are that version's section of CHANGELOG.md.
 name: release
 on:
   push:
