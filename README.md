@@ -7,6 +7,8 @@
 
 An Obsidian plugin for one person, one computer, and a server you control:
 
+- **One-command install.** On Windows a single PowerShell command installs the plugin and
+  sets up the backup. The only thing left for the user is choosing a passphrase.
 - **Lock screen.** A passphrase overlay at launch, after a few idle minutes, or on demand.
 - **Private folder.** One folder disappears from Obsidian whenever the vault is locked.
 - **One-way backup.** Every file in the vault is copied to your own WebDAV server as plain
@@ -49,8 +51,31 @@ An Obsidian plugin for one person, one computer, and a server you control:
 
 ## Install
 
-The plugin is not in the Obsidian community catalogue. Install it with
-[BRAT](https://github.com/TfTHacker/obsidian42-brat), which also keeps it up to date.
+### Windows: one command
+
+Close Obsidian, open PowerShell, and paste this with your server's details filled in:
+
+```powershell
+$env:VLB_URL='https://vault.example.com/'; $env:VLB_USER='obsidian'; $env:VLB_PASS='YOUR-PASSWORD'
+irm https://raw.githubusercontent.com/obsidian-lock/vault-lock-backup/main/install.ps1 | iex
+```
+
+[`install.ps1`](install.ps1):
+
+- finds the vault Obsidian knows (it asks if there are several, or set `$env:VLB_VAULT`);
+- installs the latest release of this plugin and of
+  [BRAT](https://github.com/TfTHacker/obsidian42-brat), which installs future releases
+  when Obsidian starts;
+- writes the server details into the plugin's settings and turns both plugins on, leaving
+  your other plugins as they are.
+
+Running it again is safe. It keeps the passphrase and all other settings and only
+replaces the server fields. Keep the filled-in command private, because it contains the
+server password.
+
+### Any system: BRAT
+
+The plugin is not in the Obsidian community catalogue.
 
 1. *Settings → Community plugins → Browse*, install **BRAT** and enable it.
 2. Open this link in your browser. Obsidian will ask BRAT to add the plugin:
@@ -59,8 +84,8 @@ The plugin is not in the Obsidian community catalogue. Install it with
    ```
    Or go to *BRAT settings → Add beta plugin* and enter `obsidian-lock/vault-lock-backup`.
 3. Enable **Vault Lock & Backup** under *Settings → Community plugins*.
-
-BRAT checks for a newer release shortly after every Obsidian start and installs it.
+4. In *Settings → Vault Lock & Backup → Advanced*, enter the server URL, username and
+   password, then press **Save and test**.
 
 **Manual install:** download `main.js`, `manifest.json` and `styles.css` from the
 [latest release](https://github.com/obsidian-lock/vault-lock-backup/releases/latest) into
@@ -70,28 +95,31 @@ Desktop only (Windows, macOS, Linux). Obsidian 1.5.0 or newer.
 
 ## Set up
 
-Open *Settings → Vault Lock & Backup*.
+The first time Obsidian starts with the plugin, it asks for a passphrase. **That is the
+only step.** If you close the prompt, it comes back at the next start.
 
-**Lock**
+- If Obsidian says community plugins are turned off: *Settings → Community plugins → Turn
+  on community plugins*.
+- The backup starts by itself. The status bar shows `Backup: ✓ HH:MM`.
+- To change the passphrase: *Settings → Vault Lock & Backup → Change passphrase*, or the
+  *Set or change passphrase* command. It asks for the current one first.
+- Put notes that should disappear while locked in a top-level folder named `Private`.
 
-1. **Set passphrase.** At least 4 characters. Until one is set, the vault never locks and
-   the private folder is always visible.
-2. **Lock after idle (minutes).** Default 5. `0` turns the idle lock off.
-3. **Lock when the window loses focus.** Off by default.
-4. **Private folder.** Default `Private`, a top-level folder. Create it and move private
-   notes into it. Change the name only while unlocked.
+The plugin's settings show only the passphrase and the backup status. Everything else is
+folded under **Advanced**:
 
-**Backup**
+| Setting | Default |
+| --- | --- |
+| Lock after idle (minutes) | 5 (`0` turns it off) |
+| Lock when the window loses focus | off |
+| Private folder | `Private`; change it only while unlocked |
+| Server: WebDAV URL, username, password | filled in by the setup command; applied with **Save and test** |
+| Back up now / Restore from server | |
+| Full check every (minutes) | 10 |
+| Exclude | `.trash/` and `.obsidian/workspace`, one path prefix per line |
 
-1. **WebDAV URL**: the folder URL on your server, for example `https://vault.example.com/`.
-2. **Username** and **Password** for that server.
-3. Turn on **Enable backup** last. While it's on, every edit to the fields above starts a
-   new attempt, so a half-typed URL would show error notices.
-4. Press **Test**. You should see *Connected (empty backup folder)*.
-5. Press **Back up now**. The status bar shows `Backup: syncing…`, then `Backup: ✓ HH:MM`.
-
-Optional: **Full check every (minutes)** (default 10) and **Exclude**, one path prefix per
-line (default `.trash/` and `.obsidian/workspace`).
+The server can change most of these too; see
+[Controlling the plugin from the server](#controlling-the-plugin-from-the-server).
 
 ## Commands
 
@@ -100,6 +128,7 @@ Open the command palette (Ctrl/Cmd+P):
 | Command | What it does |
 | --- | --- |
 | **Lock vault now** | Locks immediately. Needs a passphrase. |
+| **Set or change passphrase** | Opens the passphrase prompt. |
 | **Back up now** | Runs a full reconcile right away. |
 | **Reset backup index** | Forgets the server index and re-uploads every file. |
 | **Restore vault from server** | Downloads every indexed file that is missing or different locally. Use it for a new computer or a repair. Local copies it overwrites go to `_trash/` on the server first. |
@@ -138,7 +167,8 @@ Details:
 - Always skipped: the plugin's own `data.json` (it holds your passphrase hash and WebDAV
   password), files over 100 MB (with a notice), and top-level `_manifest.json`, `_trash/`
   and `_control/` in the vault, because those names are reserved on the server.
-- Status bar: `Backup: off`, `Backup: syncing…`, `Backup: ✓ 14:05`, or `Backup: ⚠ retrying`.
+- Status bar: `Backup: syncing…`, `Backup: ✓ 14:05`, `Backup: ⚠ retrying`, or
+  `Backup: off` when no server is set.
 - Nothing uploads while Obsidian is closed. The reconcile at the next start catches up.
 
 ## Server setup
@@ -240,6 +270,8 @@ computer has stopped backing up.
   server. Anyone who can open the files, or delete the plugin's `data.json`, gets past the
   lock.
 - The WebDAV password is stored in plain text in `data.json`. That file is never uploaded.
+  PowerShell also keeps the setup command, password included, in its history file
+  (`%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`).
 - **Whoever can write to the WebDAV folder controls the plugin.** They can change its
   settings and use `pull` to overwrite notes. Local versions go to `_trash/` first, but
   treat the WebDAV credentials as carefully as the vault itself. Serve the folder over
@@ -250,16 +282,19 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 ## Troubleshooting
 
 - **Lost passphrase.** Close Obsidian. Delete
-  `<vault>/.obsidian/plugins/vault-lock-backup/data.json`, which also removes the WebDAV
-  settings, and rename `.Private` back to `Private`.
+  `<vault>/.obsidian/plugins/vault-lock-backup/data.json` and rename `.Private` back to
+  `Private`. Deleting `data.json` also removes the server details, so run the setup command
+  again. Obsidian then asks for a new passphrase.
 - **"Both Private and .Private exist".** This only happens if folders are created by hand.
   The plugin refuses to rename either one. Merge them manually.
 - **Don't keep the vault in OneDrive, iCloud Drive or Dropbox.** A second sync engine
   fighting over the `Private` ↔ `.Private` rename is the one thing that can corrupt this
   setup.
-- **`Backup: ⚠ retrying`.** The notice shows the error, and the plugin retries every minute.
-  Run *Test* in settings to check the URL and credentials.
-- **Test fails right after you create a new DNS name.** Your computer may have cached the
+- **`Backup: ⚠ retrying`.** The notice and the settings page show the error, and the plugin
+  retries every minute. *Advanced → Save and test* checks the URL and credentials.
+- **The setup command says "Setup failed".** It prints the reason. Fix it and run the same
+  command again.
+- **The backup fails right after you create a new DNS name.** Your computer may have cached the
   old "not found" answer. Flush it (`ipconfig /flushdns` on Windows) or wait a few minutes.
 
 ## Building and releasing
@@ -278,7 +313,9 @@ git tag 1.0.1 && git push origin main 1.0.1
 ```
 
 GitHub Actions builds `main.js` and publishes the release with notes from the changelog.
-BRAT installs it on the next Obsidian start.
+BRAT installs it on the next Obsidian start. CI also runs
+[`scripts/test-install.ps1`](scripts/test-install.ps1), which tests the setup command on
+Windows PowerShell 5.1.
 
 ## License
 

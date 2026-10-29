@@ -3,6 +3,19 @@
 Each release's section below becomes its GitHub release notes. Versions follow
 [semantic versioning](https://semver.org).
 
+## 1.1.0 — 2026-10-29
+
+Zero-setup install: the only thing a user does is choose a passphrase.
+
+- **Setup command for Windows:** [`install.ps1`](install.ps1) installs the plugin and BRAT
+  into the vault, writes the server details, and turns both on. Safe to run again.
+- **Passphrase prompt:** asked for on first start (and at every start until set). New
+  *Set or change passphrase* command.
+- **Backup is always on** once a server is set; the *Enable backup* switch is gone.
+- **Simpler settings:** the passphrase and a live backup status. Everything else is under
+  *Advanced*, and server fields apply together with *Save and test*.
+- CI tests the setup command on Windows PowerShell 5.1.
+
 ## 1.0.0 — 2026-10-29
 
 First release.
