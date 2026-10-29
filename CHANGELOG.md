@@ -3,6 +3,14 @@
 Each release's section below becomes its GitHub release notes. Versions follow
 [semantic versioning](https://semver.org).
 
+## 1.1.1 — 2026-10-29
+
+- **Lock screen:** window titles stay "Obsidian" while locked, in the main window and in
+  pop-out windows. Before, Obsidian could put the open note's name back in the title.
+- **Lock screen:** the Settings window closes when the vault locks. Obsidian 1.14 opens
+  Settings in its own window, which the lock overlay doesn't cover.
+- The plugin's author is now listed as obsidian-lock.
+
 ## 1.1.0 — 2026-10-29
 
 Zero-setup install: the only thing a user does is choose a passphrase.

@@ -1,9 +1,10 @@
 {
 	"id": "vault-lock-backup",
 	"name": "Vault Lock & Backup",
-	"version": "1.1.0",
+	"version": "1.1.1",
 	"minAppVersion": "1.5.0",
 	"description": "Passphrase lock screen, a private folder hidden while locked, and a one-way backup of the vault to a WebDAV server.",
-	"author": "Andre",
+	"author": "obsidian-lock",
+	"authorUrl": "https://github.com/obsidian-lock",
 	"isDesktopOnly": true
 }

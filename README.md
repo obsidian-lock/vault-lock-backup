@@ -255,8 +255,9 @@ computer has stopped backing up.
 - The passphrase is never stored. Only a PBKDF2-SHA256 hash (200,000 iterations, random
   salt) is kept in the plugin's `data.json`.
 - Each wrong passphrase adds a growing delay, up to 5 seconds.
-- While locked, an overlay covers the whole window. Hotkeys and the command palette don't
-  work, and the window title shows only "Obsidian".
+- While locked, an overlay covers the whole window and pop-out windows go blank. Hotkeys
+  and the command palette don't work, the Settings window is closed, and every window
+  title shows only "Obsidian".
 - On lock, tabs showing private notes are closed and the private folder is renamed to a
   dot-folder (`Private/` → `.Private/`). Obsidian ignores dot-folders completely: file
   explorer, search, graph and quick switcher. On Windows the folder also gets the hidden

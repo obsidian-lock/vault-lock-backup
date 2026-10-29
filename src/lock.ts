@@ -3,6 +3,7 @@ import type VLBPlugin from "./main";
 import { hashPass, safeEqual } from "./crypto";
 
 const IDLE_CHECK_MS = 15_000;
+const LOCKED_TITLE = "Obsidian";
 
 export class LockScreen {
 	locked = false;
@@ -11,7 +12,8 @@ export class LockScreen {
 	private lastActivity = Date.now();
 	private busy = false;
 	private failedAttempts = 0;
-	private savedTitle = "";
+	/** One title guard per window (main window and pop-outs) while locked. */
+	private titleGuards = new Map<Document, { saved: string; observer: MutationObserver }>();
 
 	constructor(private plugin: VLBPlugin) {}
 
@@ -25,6 +27,10 @@ export class LockScreen {
 			this.plugin.registerDomEvent(document, ev, touch, { passive: true, capture: true });
 		}
 		this.plugin.registerInterval(window.setInterval(() => this.checkIdle(), IDLE_CHECK_MS));
+		// Pop-out windows restored or opened while locked get their title hidden too.
+		this.plugin.registerEvent(this.plugin.app.workspace.on("window-open", (_ww, win) => {
+			if (this.locked) this.guardTitle(win.document);
+		}));
 		this.plugin.registerDomEvent(window, "blur", () => {
 			if (this.plugin.settings.lockOnBlur) void this.lock();
 		});
@@ -78,8 +84,11 @@ export class LockScreen {
 		if (this.overlay) return;
 		this.scope = new Scope();
 		this.plugin.app.keymap.pushScope(this.scope);
-		this.savedTitle = document.title;
-		document.title = "Obsidian";
+		this.guardTitle(document);
+		this.plugin.app.workspace.iterateAllLeaves((leaf) => this.guardTitle(leaf.view.containerEl.doc));
+		// Settings opens in its own window, which the overlay does not cover. Leaving it open
+		// would let someone switch the plugin off and so unlock the vault.
+		(this.plugin.app as unknown as { setting?: { close?: () => void } }).setting?.close?.();
 		document.body.addClass("vlb-locked");
 
 		const o = document.body.createDiv({ cls: "vlb-overlay" });
@@ -117,10 +126,31 @@ export class LockScreen {
 		window.setTimeout(() => input.focus(), 30);
 	}
 
+	/**
+	 * Keep a window's title at "Obsidian" while locked. Obsidian rewrites titles to the active
+	 * note's name when the workspace finishes loading or a tab closes, so setting it once is
+	 * not enough. The title Obsidian wanted is remembered and restored on unlock.
+	 */
+	private guardTitle(doc: Document): void {
+		if (this.titleGuards.has(doc)) return;
+		const g = { saved: doc.title, observer: new MutationObserver(() => {
+			if (doc.title === LOCKED_TITLE) return;
+			g.saved = doc.title;
+			doc.title = LOCKED_TITLE;
+		}) };
+		this.titleGuards.set(doc, g);
+		doc.title = LOCKED_TITLE;
+		g.observer.observe(doc.head, { subtree: true, childList: true, characterData: true });
+	}
+
 	private removeOverlay(): void {
 		if (this.scope) { this.plugin.app.keymap.popScope(this.scope); this.scope = null; }
 		document.body.removeClass("vlb-locked");
-		if (this.savedTitle) document.title = this.savedTitle;
+		for (const [doc, g] of this.titleGuards) {
+			g.observer.disconnect();
+			if (g.saved) doc.title = g.saved;
+		}
+		this.titleGuards.clear();
 		this.overlay?.remove();
 		this.overlay = null;
 	}
