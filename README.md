@@ -83,9 +83,10 @@ Open *Settings → Vault Lock & Backup*.
 
 **Backup**
 
-1. Turn on **Enable backup**.
-2. **WebDAV URL**: the folder URL on your server, for example `https://vault.example.com/`.
-3. **Username** and **Password** for that server.
+1. **WebDAV URL**: the folder URL on your server, for example `https://vault.example.com/`.
+2. **Username** and **Password** for that server.
+3. Turn on **Enable backup** last. While it's on, every edit to the fields above starts a
+   new attempt, so a half-typed URL would show error notices.
 4. Press **Test**. You should see *Connected (empty backup folder)*.
 5. Press **Back up now**. The status bar shows `Backup: syncing…`, then `Backup: ✓ HH:MM`.
 
