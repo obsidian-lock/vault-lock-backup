@@ -1,0 +1,18 @@
+# WebDAV target for the Obsidian "Vault Lock & Backup" plugin.
+# Files land in ./data as plain files (the vault tree, plus _manifest.json and _trash/).
+services:
+  webdav:
+    image: ghcr.io/hacdias/webdav:latest
+    container_name: obsidian-webdav
+    restart: unless-stopped
+    command: ["-c", "/config.yml"]
+    volumes:
+      - ./config.yml:/config.yml:ro
+      - ./data:/data
+    networks:
+      - edge          # the network edge-caddy is on; adjust the name below
+
+networks:
+  edge:
+    external: true
+    name: edge        # <- replace with the actual edge-caddy network name

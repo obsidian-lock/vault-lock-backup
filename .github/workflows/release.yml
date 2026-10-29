@@ -1,0 +1,27 @@
+# Push a tag that matches manifest.json's version (e.g. `git tag 1.0.1 && git push --tags`)
+# and this builds main.js and publishes the release BRAT installs from.
+name: release
+on:
+  push:
+    tags: ["*"]
+permissions:
+  contents: write
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci
+      - run: npm run check
+      - run: npm run build
+      - name: Verify tag matches manifest version
+        run: |
+          v=$(node -p "require('./manifest.json').version")
+          [ "$v" = "${GITHUB_REF_NAME}" ] || { echo "manifest.json version $v != tag ${GITHUB_REF_NAME}"; exit 1; }
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "${GITHUB_REF_NAME}" --title "${GITHUB_REF_NAME}" --notes "Vault Lock & Backup ${GITHUB_REF_NAME}" main.js manifest.json styles.css

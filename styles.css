@@ -1,0 +1,47 @@
+/* Lock overlay */
+.vlb-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	background: var(--background-primary);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+}
+.vlb-box {
+	display: flex;
+	flex-direction: column;
+	gap: 12px;
+	width: 300px;
+	padding: 28px;
+	border-radius: var(--radius-l);
+	background: var(--background-secondary);
+	box-shadow: var(--shadow-l);
+}
+.vlb-title {
+	font-size: var(--font-ui-large);
+	font-weight: 600;
+	text-align: center;
+}
+.vlb-input {
+	width: 100%;
+}
+.vlb-error {
+	color: var(--text-error);
+	font-size: var(--font-ui-small);
+	min-height: 1.2em;
+	text-align: center;
+}
+
+/* While locked, nothing underneath is painted (no peeking via transparency tricks). */
+.vlb-locked .workspace,
+.vlb-locked .status-bar,
+.vlb-locked .modal-container,
+.vlb-locked .titlebar {
+	visibility: hidden;
+}
+
+/* Status bar */
+.vlb-status-error {
+	color: var(--text-error);
+}
