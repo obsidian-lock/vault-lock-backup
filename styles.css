@@ -45,3 +45,11 @@
 .vlb-status-error {
 	color: var(--text-error);
 }
+
+/* Settings: the "Advanced" fold */
+.vlb-advanced > summary {
+	cursor: pointer;
+	padding: 12px 0;
+	color: var(--text-muted);
+	font-weight: 600;
+}

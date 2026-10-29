@@ -6,7 +6,7 @@ export interface VLBSettings {
 	idleMinutes: number;
 	lockOnBlur: boolean;
 	privateFolder: string;
-	backupEnabled: boolean;
+	/** Backup runs whenever this is set. The setup script fills in the three server fields. */
 	webdavUrl: string;
 	webdavUser: string;
 	webdavPass: string;
@@ -24,7 +24,6 @@ export const DEFAULT_SETTINGS: VLBSettings = {
 	idleMinutes: 5,
 	lockOnBlur: false,
 	privateFolder: "Private",
-	backupEnabled: false,
 	webdavUrl: "",
 	webdavUser: "",
 	webdavPass: "",

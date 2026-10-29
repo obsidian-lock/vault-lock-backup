@@ -43,6 +43,7 @@ export class Backup {
 	private reconcileQueued = false;
 	private warnedLarge = new Set<string>();
 	private lastOk: Date | null = null;
+	private state: Status = "off";
 	private statusEl: HTMLElement;
 	private stopped = false;
 
@@ -52,9 +53,20 @@ export class Backup {
 		this.setStatus("off");
 	}
 
+	/** On whenever a server URL is set. */
 	get enabled(): boolean {
-		const s = this.plugin.settings;
-		return s.backupEnabled && !!s.webdavUrl.trim() && !this.stopped;
+		return !!this.plugin.settings.webdavUrl.trim() && !this.stopped;
+	}
+
+	/** One line for the settings tab. */
+	describe(): string {
+		if (!this.enabled) return "Not set up. Run the setup script, or fill in Advanced → Server.";
+		let host = this.plugin.settings.webdavUrl.trim();
+		try { host = new URL(host).host; } catch { /* show the raw URL */ }
+		const last = this.lastOk ? `last backup at ${this.lastOk.toTimeString().slice(0, 5)}` : "no backup yet since Obsidian started";
+		if (this.state === "error") return `Problem: ${this.lastError || "unknown error"}. Retrying every minute.`;
+		if (this.state === "syncing") return `Backing up to ${host} now…`;
+		return `Backing up to ${host} automatically, ${last}.`;
 	}
 
 	// ---- lifecycle -----------------------------------------------------------
@@ -80,7 +92,7 @@ export class Backup {
 		}
 	}
 
-	/** Call after the user changes URL/credentials/toggle in settings. */
+	/** Call after the server URL or credentials change. */
 	onSettingsChanged(): void {
 		this.manifestLoaded = false;
 		this.knownDirs.clear();
@@ -436,6 +448,7 @@ export class Backup {
 	}
 
 	private setStatus(state: Status): void {
+		this.state = state;
 		const t = this.lastOk ? " " + this.lastOk.toTimeString().slice(0, 5) : "";
 		const text =
 			state === "off" ? "Backup: off" :
