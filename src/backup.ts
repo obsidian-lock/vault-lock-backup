@@ -43,7 +43,6 @@ export class Backup {
 	private reconcileQueued = false;
 	private warnedLarge = new Set<string>();
 	private lastOk: Date | null = null;
-	private state: Status = "off";
 	private statusEl: HTMLElement;
 	private stopped = false;
 
@@ -56,17 +55,6 @@ export class Backup {
 	/** On whenever a server URL is set. */
 	get enabled(): boolean {
 		return !!this.plugin.settings.webdavUrl.trim() && !this.stopped;
-	}
-
-	/** One line for the settings tab. */
-	describe(): string {
-		if (!this.enabled) return "Not set up. Run the setup script, or fill in Advanced → Server.";
-		let host = this.plugin.settings.webdavUrl.trim();
-		try { host = new URL(host).host; } catch { /* show the raw URL */ }
-		const last = this.lastOk ? `last backup at ${this.lastOk.toTimeString().slice(0, 5)}` : "no backup yet since Obsidian started";
-		if (this.state === "error") return `Problem: ${this.lastError || "unknown error"}. Retrying every minute.`;
-		if (this.state === "syncing") return `Backing up to ${host} now…`;
-		return `Backing up to ${host} automatically, ${last}.`;
 	}
 
 	// ---- lifecycle -----------------------------------------------------------
@@ -90,16 +78,6 @@ export class Backup {
 		for (const t of [this.manifestTimer, this.retryTimer, this.intervalTimer, this.startupTimer]) {
 			if (t) window.clearTimeout(t);
 		}
-	}
-
-	/** Call after the server URL or credentials change. */
-	onSettingsChanged(): void {
-		this.manifestLoaded = false;
-		this.knownDirs.clear();
-		this.failed = false;
-		this.scheduleInterval();
-		this.setStatus(this.enabled ? "idle" : "off");
-		if (this.enabled) this.requestReconcile("settings");
 	}
 
 	/** Forget the server index; the next reconcile re-uploads every file. */
@@ -136,11 +114,6 @@ export class Backup {
 			if (await this.plugin.app.vault.adapter.exists(pf.hiddenName)) return pf.hiddenName + sp.slice(pf.name.length);
 		}
 		return sp;
-	}
-
-	async testConnection(): Promise<string> {
-		const r = await this.dav("GET", MANIFEST);
-		return r.status === 404 ? "Connected (empty backup folder)" : `Connected (index has ${Object.keys(this.parseManifest(r)).length} files)`;
 	}
 
 	scheduleInterval(): void {
@@ -448,7 +421,6 @@ export class Backup {
 	}
 
 	private setStatus(state: Status): void {
-		this.state = state;
 		const t = this.lastOk ? " " + this.lastOk.toTimeString().slice(0, 5) : "";
 		const text =
 			state === "off" ? "Backup: off" :

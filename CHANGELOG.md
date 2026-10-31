@@ -3,6 +3,16 @@
 Each release's section below becomes its GitHub release notes. Versions follow
 [semantic versioning](https://semver.org).
 
+## 1.2.0 — 2026-10-31
+
+- **Settings are only about the passphrase and the lock:** passphrase, idle minutes, lock
+  on focus loss, and the private folder. The backup status, server fields, backup buttons,
+  full-check interval and exclude list are gone from the settings. The backup is configured
+  by the setup command and runs by itself; the server can still change its options through
+  `_control/config.json`.
+- The *Back up now*, *Reset backup index* and *Restore vault from server* commands are
+  still in the command palette.
+
 ## 1.1.1 — 2026-10-29
 
 - **Lock screen:** window titles stay "Obsidian" while locked, in the main window and in

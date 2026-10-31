@@ -7,9 +7,8 @@
 #   $env:VLB_URL='https://vault.example.com/'; $env:VLB_USER='obsidian'; $env:VLB_PASS='...'
 #   irm https://raw.githubusercontent.com/obsidian-lock/vault-lock-backup/main/install.ps1 | iex
 #
-# Without VLB_URL it only installs; enter the server later under
-# Settings > Vault Lock & Backup > Advanced. VLB_VAULT picks the vault folder when Obsidian
-# knows several. VLB_NO_LAUNCH=1 skips opening Obsidian at the end. Safe to run again: it
+# Without VLB_URL it only installs and the backup stays off; run it again with VLB_URL set
+# to turn the backup on. VLB_VAULT picks the vault folder when Obsidian knows several. VLB_NO_LAUNCH=1 skips opening Obsidian at the end. Safe to run again: it
 # keeps the passphrase and all other settings and only replaces the server fields.
 
 & {
@@ -117,7 +116,7 @@
 			Set-Prop $data 'webdavPass' ([string]$env:VLB_PASS)
 			Write-Host "Backup server: $($env:VLB_URL.Trim())"
 		} else {
-			Write-Host 'No VLB_URL given: the backup stays off until a server is entered in the plugin settings.' -ForegroundColor Yellow
+			Write-Host 'No VLB_URL given: the backup stays off. Run this again with VLB_URL, VLB_USER and VLB_PASS set to turn it on.' -ForegroundColor Yellow
 		}
 		Write-JsonFile $dataPath $data
 

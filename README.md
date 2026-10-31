@@ -84,8 +84,12 @@ The plugin is not in the Obsidian community catalogue.
    ```
    Or go to *BRAT settings → Add beta plugin* and enter `obsidian-lock/vault-lock-backup`.
 3. Enable **Vault Lock & Backup** under *Settings → Community plugins*.
-4. In *Settings → Vault Lock & Backup → Advanced*, enter the server URL, username and
-   password, then press **Save and test**.
+4. Close Obsidian and add the server details to
+   `<vault>/.obsidian/plugins/vault-lock-backup/data.json` (create the file if it isn't
+   there), then open Obsidian again:
+   ```json
+   { "webdavUrl": "https://vault.example.com/", "webdavUser": "obsidian", "webdavPass": "…" }
+   ```
 
 **Manual install:** download `main.js`, `manifest.json` and `styles.css` from the
 [latest release](https://github.com/obsidian-lock/vault-lock-backup/releases/latest) into
@@ -105,20 +109,17 @@ only step.** If you close the prompt, it comes back at the next start.
   *Set or change passphrase* command. It asks for the current one first.
 - Put notes that should disappear while locked in a top-level folder named `Private`.
 
-The plugin's settings show only the passphrase and the backup status. Everything else is
-folded under **Advanced**:
+The plugin's settings are only about the passphrase and the lock. The backup has no
+settings there: the setup command configures it and it runs by itself.
 
 | Setting | Default |
 | --- | --- |
+| Passphrase | set on first start; **Change passphrase** asks for the current one first |
 | Lock after idle (minutes) | 5 (`0` turns it off) |
 | Lock when the window loses focus | off |
 | Private folder | `Private`; change it only while unlocked |
-| Server: WebDAV URL, username, password | filled in by the setup command; applied with **Save and test** |
-| Back up now / Restore from server | |
-| Full check every (minutes) | 10 |
-| Exclude | `.trash/` and `.obsidian/workspace`, one path prefix per line |
 
-The server can change most of these too; see
+The server can change the lock options and the backup options; see
 [Controlling the plugin from the server](#controlling-the-plugin-from-the-server).
 
 ## Commands
@@ -212,6 +213,10 @@ computer.
   "excludes": [".trash/", ".obsidian/workspace"] }
 ```
 
+`reconcileMinutes` is how often the whole vault is compared with the server (besides live
+uploads). `excludes` lists path prefixes that are never uploaded. These two have no setting
+in Obsidian; this file is the place to change them.
+
 **`commands.json`**: a list. Each `id` runs once, ever, and its result is reported in
 `status.json`. To run something again, add it with a new id.
 
@@ -291,8 +296,9 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 - **Don't keep the vault in OneDrive, iCloud Drive or Dropbox.** A second sync engine
   fighting over the `Private` ↔ `.Private` rename is the one thing that can corrupt this
   setup.
-- **`Backup: ⚠ retrying`.** The notice and the settings page show the error, and the plugin
-  retries every minute. *Advanced → Save and test* checks the URL and credentials.
+- **`Backup: ⚠ retrying`.** A notice shows the error, and the plugin retries every minute.
+  If the server address or password changed, run the setup command again with the new
+  values; it only replaces the server details.
 - **The setup command says "Setup failed".** It prints the reason. Fix it and run the same
   command again.
 - **The backup fails right after you create a new DNS name.** Your computer may have cached the

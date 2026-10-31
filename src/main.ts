@@ -66,30 +66,17 @@ export default class VLBPlugin extends Plugin {
 }
 
 class VLBSettingTab extends PluginSettingTab {
-	private advancedOpen = false;
-	private statusTimer: number | null = null;
-
 	constructor(app: App, private plugin: VLBPlugin) {
 		super(app, plugin);
 	}
 
-	hide(): void {
-		this.stopStatusTimer();
-	}
-
-	private stopStatusTimer(): void {
-		if (this.statusTimer) window.clearInterval(this.statusTimer);
-		this.statusTimer = null;
-	}
-
+	// Only the passphrase and the lock. The backup is set up by the setup script and
+	// runs by itself; the server can change its options through _control/config.json.
 	display(): void {
 		const { containerEl } = this;
 		containerEl.empty();
-		this.stopStatusTimer();
 		const s = this.plugin.settings;
-		const backup = this.plugin.backup;
 
-		// ---- What a user sees: the passphrase and whether the backup works --------
 		new Setting(containerEl)
 			.setName("Passphrase")
 			.setDesc(s.passHash
@@ -98,18 +85,7 @@ class VLBSettingTab extends PluginSettingTab {
 			.addButton((b) => b.setButtonText(s.passHash ? "Change passphrase" : "Set passphrase").setCta()
 				.onClick(() => new PassphraseModal(this.app, this.plugin, () => this.display()).open()));
 
-		const status = new Setting(containerEl).setName("Backup").setDesc(backup.describe());
-		this.statusTimer = window.setInterval(() => status.setDesc(backup.describe()), 2000);
-
-		// ---- Everything else is folded away ------------------------------------
-		const adv = containerEl.createEl("details", { cls: "vlb-advanced" });
-		adv.open = this.advancedOpen;
-		adv.addEventListener("toggle", () => (this.advancedOpen = adv.open));
-		adv.createEl("summary", { text: "Advanced" });
-
-		new Setting(adv).setName("Lock").setHeading();
-
-		new Setting(adv)
+		new Setting(containerEl)
 			.setName("Lock after idle (minutes)")
 			.setDesc("0 disables the idle lock.")
 			.addText((t) => t.setValue(String(s.idleMinutes)).onChange(async (v) => {
@@ -117,11 +93,11 @@ class VLBSettingTab extends PluginSettingTab {
 				if (Number.isFinite(n) && n >= 0) { s.idleMinutes = n; await this.plugin.saveSettings(); }
 			}));
 
-		new Setting(adv)
+		new Setting(containerEl)
 			.setName("Lock when the window loses focus")
 			.addToggle((t) => t.setValue(s.lockOnBlur).onChange(async (v) => { s.lockOnBlur = v; await this.plugin.saveSettings(); }));
 
-		new Setting(adv)
+		new Setting(containerEl)
 			.setName("Private folder")
 			.setDesc("Top-level folder that is renamed to a dot-folder (invisible to Obsidian) while locked. Change it only while unlocked.")
 			.addText((t) => t.setValue(s.privateFolder).onChange(async (v) => {
@@ -131,63 +107,5 @@ class VLBSettingTab extends PluginSettingTab {
 				s.privateFolder = name;
 				await this.plugin.saveSettings();
 			}));
-
-		new Setting(adv).setName("Server").setHeading();
-
-		// Edited here, applied together on Save, so a half-typed URL never starts a backup.
-		let url = s.webdavUrl, user = s.webdavUser, pass = s.webdavPass;
-		new Setting(adv)
-			.setName("WebDAV URL")
-			.setDesc("Folder URL on your server, e.g. https://vault.example.com/. The setup script fills in these three fields.")
-			.addText((t) => t.setPlaceholder("https://…/").setValue(url).onChange((v) => (url = v)));
-		new Setting(adv)
-			.setName("Username")
-			.addText((t) => t.setValue(user).onChange((v) => (user = v)));
-		new Setting(adv)
-			.setName("Password")
-			.setDesc("Stored in this plugin's data.json, which is never uploaded.")
-			.addText((t) => { t.inputEl.type = "password"; t.setValue(pass).onChange((v) => (pass = v)); });
-		new Setting(adv)
-			.addButton((b) => b.setButtonText("Save and test").setCta().onClick(async () => {
-				s.webdavUrl = url.trim();
-				s.webdavUser = user.trim();
-				s.webdavPass = pass;
-				await this.plugin.saveSettings();
-				backup.onSettingsChanged();
-				status.setDesc(backup.describe());
-				if (!backup.enabled) { new Notice("Saved. Backup is off because the URL is empty."); return; }
-				try { new Notice(await backup.testConnection()); }
-				catch (e) { new Notice("Saved, but the test failed: " + (e instanceof Error ? e.message : String(e)), 8000); }
-			}));
-
-		new Setting(adv)
-			.setName("Backup actions")
-			.addButton((b) => b.setButtonText("Back up now").onClick(() => {
-				if (!backup.enabled) { new Notice("Set the server first."); return; }
-				backup.requestReconcile("manual");
-				new Notice("Backup started");
-			}))
-			.addButton((b) => b.setButtonText("Restore from server").setWarning().onClick(() => {
-				if (!backup.enabled) { new Notice("Set the server first."); return; }
-				backup.restoreFromServer();
-				new Notice("Restore started — local versions of overwritten files go to _trash on the server.");
-			}));
-
-		new Setting(adv)
-			.setName("Full check every (minutes)")
-			.setDesc("Besides live uploads, the whole vault is compared against the server index on this interval and at startup.")
-			.addText((t) => t.setValue(String(s.reconcileMinutes)).onChange(async (v) => {
-				const n = Number(v);
-				if (Number.isFinite(n) && n >= 1) { s.reconcileMinutes = n; await this.plugin.saveSettings(); backup.scheduleInterval(); }
-			}));
-
-		new Setting(adv)
-			.setName("Exclude")
-			.setDesc("One path prefix per line. Everything else in the vault, including .obsidian, is backed up.")
-			.addTextArea((t) => {
-				t.setValue(s.excludes).onChange(async (v) => { s.excludes = v; await this.plugin.saveSettings(); });
-				t.inputEl.rows = 4;
-				t.inputEl.cols = 40;
-			});
 	}
 }
