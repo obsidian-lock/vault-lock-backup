@@ -2,6 +2,7 @@ import { Notice } from "obsidian";
 import type VLBPlugin from "./main";
 import type { Backup, Entry } from "./backup";
 import { CmdResult } from "./settings";
+import { computerName } from "./pairing";
 
 /**
  * VPS-side control, pull-based. Everything lives in the `_control/` folder on the
@@ -41,6 +42,7 @@ export class Control {
 		const body = {
 			at: new Date().toISOString(),
 			version: this.plugin.manifest.version,
+			computer: computerName(),
 			locked: this.plugin.lock.locked,
 			lastReconcile: reconcile,
 			lastError: this.backup.lastError || this.configError || null,

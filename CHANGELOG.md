@@ -3,6 +3,27 @@
 Each release's section below becomes its GitHub release notes. Versions follow
 [semantic versioning](https://semver.org).
 
+## 1.3.0 — 2026-11-01
+
+Pairing: install with BRAT, choose a passphrase, and the backup sets itself up. No server
+address or password to type, copy or publish.
+
+- **Pairing:** on first start the plugin makes up its own login and key and sends only a
+  bcrypt hash of the key to the server's pairing inbox. While pairing is open the server
+  accepts the first computer that asks, gives it its own folder, and closes pairing. See
+  the README's [Pairing](README.md#pairing) section.
+- **One folder per computer:** a paired computer sees only its own folder on the server, so
+  a stranger who pairs never sees your notes.
+- **Self-healing:** if the server revokes this computer's login, the plugin asks to pair
+  again every minute and reconnects once pairing is open (`vlb open --into` continues the
+  old folder).
+- New status bar states: `Backup: pairing…` and `Backup: ⚠ not paired`.
+- `status.json` now includes the computer's name.
+- Server: `server/vlb` (pairing and computer admin), a second container for the pairing
+  inbox, a 15-second systemd timer, and an updated Caddy snippet. The WebDAV image is
+  pinned.
+- The setup command no longer needs server details; without them the plugin pairs.
+
 ## 1.2.0 — 2026-10-31
 
 - **Settings are only about the passphrase and the lock:** passphrase, idle minutes, lock

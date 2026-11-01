@@ -1,0 +1,346 @@
+#!/usr/bin/env python3
+"""vlb: pairing and computer admin for the Vault Lock & Backup server.
+
+How pairing works: on first start the plugin makes up its own random key and drops a small
+request (its id, computer name and a bcrypt hash of the key) into the inbox through the
+public "pair" login, which can only create files. While pairing is open, `vlb process`
+(run every 15 s by vlb-pair.timer) accepts the FIRST valid request: that computer gets its
+own WebDAV login and its own sealed folder, and pairing closes by itself. A computer only
+ever sees its own folder, so a stranger who pairs gets an empty folder, never your notes.
+
+Layout under ROOT (/opt/obsidian-webdav):
+  state.json                 source of truth: pairing state, computers, extra users
+  conf/webdav/config.json    generated for the obsidian-webdav container (never hand-edit)
+  conf/pair/config.json      generated for the obsidian-pair container (the inbox)
+  inbox/                     pairing requests land here
+  data/devices/<folder>/     one folder per paired computer: the vault, _manifest.json,
+                             _trash/ and _control/
+  vlb.log                    what vlb did
+
+Commands:
+  vlb status                 pairing state and paired computers, with last check-in
+  vlb open [--into FOLDER]   accept the next computer that asks; --into continues an
+                             existing folder (a new or reinstalled laptop)
+  vlb close                  stop accepting computers
+  vlb remove COMPUTER        revoke a computer's login (id, login or folder); keeps its folder
+  vlb process                handle the inbox (the timer runs this)
+  vlb apply [--no-restart]   regenerate both configs from state.json and restart if changed
+"""
+
+import datetime
+import fcntl
+import json
+import os
+import re
+import secrets
+import subprocess
+import sys
+
+ROOT = os.environ.get("VLB_ROOT", "/opt/obsidian-webdav")
+STATE = os.path.join(ROOT, "state.json")
+INBOX = os.path.join(ROOT, "inbox")
+DEVICES = os.path.join(ROOT, "data", "devices")
+CONF = {"webdav": os.path.join(ROOT, "conf", "webdav", "config.json"),
+        "pair": os.path.join(ROOT, "conf", "pair", "config.json")}
+CONTAINER = {"webdav": "obsidian-webdav", "pair": "obsidian-pair"}
+LOG = os.path.join(ROOT, "vlb.log")
+LOCK = os.path.join(ROOT, ".vlb.lock")
+
+# Public on purpose: this login can only create small files in the inbox, and only while
+# pairing is open. It must match PAIR_PASSWORD in the plugin's src/server.ts.
+PAIR_USER = "pair"
+PAIR_PASSWORD = "vault-lock-backup-pairing"
+
+ID_RE = re.compile(r"^[a-f0-9]{16}$")
+HASH_RE = re.compile(r"^\$2[aby]\$\d\d\$[./A-Za-z0-9]{53}$")
+FOLDER_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$")
+MAX_REQUEST = 4096
+
+
+def now():
+    return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+
+def log(msg):
+    line = f"{now()} {msg}"
+    print(line)
+    with open(LOG, "a") as f:
+        f.write(line + "\n")
+
+
+def clean(value, limit=32, fallback=""):
+    s = re.sub(r"[^A-Za-z0-9-]", "", str(value or ""))[:limit]
+    return s or fallback
+
+
+def write_json(path, value, mode=0o600):
+    """Atomic: a crash never leaves a half-written file."""
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    tmp = path + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(value, f, indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.chmod(tmp, mode)
+    os.replace(tmp, path)
+
+
+def load_state():
+    if not os.path.exists(STATE):
+        return {"pairing": {"open": False, "into": None, "since": now()}, "devices": [], "extraUsers": []}
+    with open(STATE) as f:
+        state = json.load(f)
+    state.setdefault("pairing", {"open": False, "into": None, "since": now()})
+    state.setdefault("devices", [])
+    state.setdefault("extraUsers", [])
+    return state
+
+
+def save_state(state):
+    write_json(STATE, state)
+
+
+# ---- configs ----------------------------------------------------------------------
+
+def webdav_config(state):
+    # Extra users may carry a "note" for humans; pass on only what hacdias knows.
+    keep = ("username", "password", "directory", "permissions", "rules")
+    users = [{k: u[k] for k in keep if k in u} for u in state["extraUsers"]]
+    for d in state["devices"]:
+        users.append({
+            "username": d["username"],
+            "password": "{bcrypt}" + d["hash"],
+            "directory": "/data/devices/" + d["folder"],
+            "permissions": "CRUD",
+        })
+    if not users:
+        # hacdias/webdav turns authentication OFF when no users are listed. Never allow that.
+        if not state.get("lockedPassword"):
+            state["lockedPassword"] = secrets.token_hex(32)
+        users.append({"username": "locked", "password": state["lockedPassword"], "permissions": "none"})
+    return {
+        "address": "0.0.0.0", "port": 6065, "behindProxy": True,
+        "directory": "/data/devices", "permissions": "none",
+        "users": users,
+    }
+
+
+def pair_config(state):
+    p = state["pairing"]
+    if not p.get("closedPassword"):
+        p["closedPassword"] = secrets.token_hex(32)
+    password = PAIR_PASSWORD if p.get("open") else p["closedPassword"]
+    return {
+        "address": "0.0.0.0", "port": 6065, "behindProxy": True,
+        "prefix": "/_pair/", "directory": "/inbox", "permissions": "none",
+        "users": [{"username": PAIR_USER, "password": password, "permissions": "C"}],
+    }
+
+
+def apply(state, restart=True):
+    """Write both configs; restart a container only when its config changed."""
+    wanted = {"webdav": webdav_config(state), "pair": pair_config(state)}
+    save_state(state)  # the configs may have added generated passwords
+    for key, cfg in wanted.items():
+        old = None
+        if os.path.exists(CONF[key]):
+            with open(CONF[key]) as f:
+                try:
+                    old = json.load(f)
+                except ValueError:
+                    old = None
+        if old == cfg:
+            continue
+        write_json(CONF[key], cfg)
+        if restart:
+            r = subprocess.run(["docker", "restart", CONTAINER[key]], capture_output=True, text=True)
+            if r.returncode != 0:
+                raise RuntimeError(f"docker restart {CONTAINER[key]} failed: {r.stderr.strip()}")
+            log(f"restarted {CONTAINER[key]}")
+
+
+# ---- inbox ------------------------------------------------------------------------
+
+def read_request(path):
+    """A valid request, or None. Anything odd is ignored, never trusted."""
+    try:
+        if os.path.getsize(path) > MAX_REQUEST:
+            return None
+        with open(path) as f:
+            req = json.load(f)
+    except (OSError, ValueError):
+        return None
+    if not isinstance(req, dict):
+        return None
+    rid, h = req.get("id"), req.get("hash")
+    if not isinstance(rid, str) or not ID_RE.match(rid) or os.path.basename(path) != rid + ".json":
+        return None
+    if not isinstance(h, str) or not HASH_RE.match(h):
+        return None
+    return {
+        "id": rid, "hash": h,
+        "name": clean(req.get("name"), 32, "computer"),
+        "user": clean(req.get("user"), 32),
+        "os": clean(req.get("os"), 16),
+        "plugin": re.sub(r"[^0-9.]", "", str(req.get("plugin") or ""))[:16],
+    }
+
+
+def unique_folder(state, base):
+    taken = {d["folder"] for d in state["devices"]}
+    if os.path.isdir(DEVICES):
+        taken |= set(os.listdir(DEVICES))
+    folder, n = base, 2
+    while folder in taken:
+        folder, n = f"{base}-{n}", n + 1
+    return folder
+
+
+def process(state):
+    if not os.path.isdir(INBOX):
+        return
+    files = [os.path.join(INBOX, n) for n in os.listdir(INBOX)]
+    files = [f for f in files if os.path.isfile(f)]
+    if not files:
+        return
+    files.sort(key=lambda f: os.path.getmtime(f))
+    p = state["pairing"]
+    if not p.get("open"):
+        for f in files:
+            os.remove(f)
+        log(f"pairing closed: dropped {len(files)} request(s)")
+        return
+    paired = {d["id"] for d in state["devices"]}
+    chosen = None
+    for f in files:
+        req = read_request(f)
+        if req is None:
+            log(f"ignored invalid request {os.path.basename(f)[:40]!r}")
+            continue
+        if req["id"] in paired:
+            continue
+        chosen = req
+        break
+    if chosen:
+        folder = p.get("into") or unique_folder(state, f"{chosen['name']}-{chosen['id'][:6]}")
+        os.makedirs(os.path.join(DEVICES, folder), exist_ok=True)  # before the restart: hacdias probes it
+        state["devices"].append({
+            "id": chosen["id"], "username": "d-" + chosen["id"], "hash": chosen["hash"],
+            "folder": folder, "name": chosen["name"], "user": chosen["user"], "os": chosen["os"],
+            "plugin": chosen["plugin"], "pairedAt": now(),
+        })
+        state["pairing"] = {"open": False, "into": None, "since": now(), "closedPassword": p.get("closedPassword")}
+        apply(state)
+        log(f"paired {chosen['name']} (user {chosen['user'] or '?'}, {chosen['os'] or '?'}) "
+            f"as d-{chosen['id']} -> data/devices/{folder}; pairing closed")
+    for f in files:
+        if os.path.exists(f):
+            os.remove(f)
+
+
+# ---- commands ---------------------------------------------------------------------
+
+def find_device(state, key):
+    for d in state["devices"]:
+        if key in (d["id"], d["username"], d["folder"]):
+            return d
+    return None
+
+
+def last_seen(folder):
+    try:
+        with open(os.path.join(DEVICES, folder, "_control", "status.json")) as f:
+            s = json.load(f)
+        return s.get("at") or "?", s.get("version") or "?", s.get("lastError")
+    except (OSError, ValueError):
+        return "never", "?", None
+
+
+def cmd_status(state):
+    p = state["pairing"]
+    if p.get("open"):
+        into = f", into data/devices/{p['into']}" if p.get("into") else ""
+        print(f"Pairing: OPEN since {p.get('since')}{into}. The next computer that asks is accepted.")
+    else:
+        print(f"Pairing: closed since {p.get('since')}. Open it with: vlb open")
+    waiting = len(os.listdir(INBOX)) if os.path.isdir(INBOX) else 0
+    if waiting:
+        print(f"Inbox: {waiting} request(s) waiting for the next run")
+    if not state["devices"]:
+        print("No paired computers.")
+    for d in state["devices"]:
+        seen, version, err = last_seen(d["folder"])
+        print(f"- {d['name']} (user {d['user'] or '?'}, {d['os'] or '?'})  login {d['username']}")
+        print(f"    folder data/devices/{d['folder']}  paired {d['pairedAt']}")
+        print(f"    last check-in {seen}, plugin {version}" + (f", error: {err}" if err else ""))
+    for u in state["extraUsers"]:
+        print(f"- extra login {u.get('username')} -> {u.get('directory', '/data/devices')}")
+
+
+def cmd_open(state, into):
+    if into:
+        if not FOLDER_RE.match(into) or not os.path.isdir(os.path.join(DEVICES, into)):
+            sys.exit(f"No folder data/devices/{into}")
+        owner = next((d for d in state["devices"] if d["folder"] == into), None)
+        if owner:
+            sys.exit(f"{owner['name']} ({owner['username']}) still uses that folder. "
+                     f"If that computer is gone: vlb remove {owner['username']}")
+    state["pairing"].update({"open": True, "into": into, "since": now()})
+    apply(state)
+    log("pairing opened" + (f" into {into}" if into else ""))
+
+
+def cmd_close(state):
+    state["pairing"].update({"open": False, "into": None, "since": now()})
+    apply(state)
+    log("pairing closed by hand")
+
+
+def cmd_remove(state, key):
+    d = find_device(state, key)
+    if not d:
+        sys.exit(f"No paired computer matches {key!r}. See: vlb status")
+    state["devices"].remove(d)
+    apply(state)
+    log(f"removed {d['name']} ({d['username']}); its folder data/devices/{d['folder']} is kept")
+
+
+def main(argv):
+    if not argv or argv[0] in ("-h", "--help", "help"):
+        print(__doc__)
+        return
+    cmd, args = argv[0], argv[1:]
+    os.makedirs(ROOT, exist_ok=True)
+    with open(LOCK, "w") as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        state = load_state()
+        if cmd == "status":
+            cmd_status(state)
+        elif cmd == "open":
+            into = None
+            if args[:1] == ["--into"] and len(args) == 2:
+                into = args[1]
+            elif args:
+                sys.exit("usage: vlb open [--into FOLDER]")
+            cmd_open(state, into)
+        elif cmd == "close":
+            cmd_close(state)
+        elif cmd == "remove" and len(args) == 1:
+            cmd_remove(state, args[0])
+        elif cmd == "process":
+            process(state)
+        elif cmd == "apply":
+            apply(state, restart=args != ["--no-restart"])
+        else:
+            sys.exit(f"Unknown command: {' '.join(argv)}. See: vlb help")
+
+
+if __name__ == "__main__":
+    try:
+        main(sys.argv[1:])
+    except SystemExit:
+        raise
+    except Exception as e:  # keep the timer's log readable
+        log(f"ERROR {type(e).__name__}: {e}")
+        sys.exit(1)

@@ -2,5 +2,15 @@
 # once the DNS name points at this server.
 # Do NOT rewrite the Host header: WebDAV MOVE compares the Destination URL's host with it.
 vault.example.com {
-    reverse_proxy obsidian-webdav:6065
+    # Pairing inbox: tiny requests only.
+    handle /_pair/* {
+        request_body {
+            max_size 4KB
+        }
+        reverse_proxy obsidian-pair:6065
+    }
+    # Everything else: the backup.
+    handle {
+        reverse_proxy obsidian-webdav:6065
+    }
 }

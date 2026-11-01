@@ -2,6 +2,8 @@ import { Notice, requestUrl, RequestUrlResponse, TAbstractFile, TFolder } from "
 import type VLBPlugin from "./main";
 import { b64 } from "./crypto";
 import { Control, CONTROL } from "./control";
+import { Pairing, PairState } from "./pairing";
+import { PAIR_DIR, SERVER_URL } from "./server";
 
 /**
  * One-way push of the vault to a WebDAV folder.
@@ -12,11 +14,14 @@ import { Control, CONTROL } from "./control";
  * The reconcile runs at startup, on a timer, when the machine comes back online, and
  * one minute after any failure. Nothing is ever deleted on the server: removed or
  * renamed-away files are moved into `_trash/<timestamp>/`.
+ *
+ * Nothing runs until this computer is paired with the server (see pairing.ts), unless the
+ * setup script wrote a login.
  */
 
 export type Entry = { m: number; s: number };
 type Manifest = Record<string, Entry>;
-type Status = "off" | "idle" | "syncing" | "error";
+type Status = "off" | "idle" | "syncing" | "error" | PairState;
 
 const MANIFEST = "_manifest.json";
 const TRASH = "_trash";
@@ -29,6 +34,7 @@ const STARTUP_DELAY_MS = 8_000;
 export class Backup {
 	manifest: Manifest = {};
 	control: Control;
+	pairing: Pairing;
 	lastError = "";
 	private manifestLoaded = false;
 	private manifestDirty = false;
@@ -45,16 +51,18 @@ export class Backup {
 	private lastOk: Date | null = null;
 	private statusEl: HTMLElement;
 	private stopped = false;
+	private paired = false;
 
 	constructor(private plugin: VLBPlugin) {
 		this.statusEl = plugin.addStatusBarItem();
 		this.control = new Control(plugin, this);
+		this.pairing = new Pairing(plugin, this);
 		this.setStatus("off");
 	}
 
-	/** On whenever a server URL is set. */
+	/** Runs once this computer has a working login on the server. */
 	get enabled(): boolean {
-		return !!this.plugin.settings.webdavUrl.trim() && !this.stopped;
+		return this.paired && !this.stopped;
 	}
 
 	// ---- lifecycle -----------------------------------------------------------
@@ -67,12 +75,52 @@ export class Backup {
 		this.plugin.registerEvent(v.on("rename", (f, old) => this.onRename(f, old)));
 		this.plugin.registerDomEvent(window, "online", () => this.requestReconcile("online"));
 		this.scheduleInterval();
-		this.startupTimer = window.setTimeout(() => this.requestReconcile("startup"), STARTUP_DELAY_MS);
-		this.setStatus(this.enabled ? "idle" : "off");
+		void this.begin();
+	}
+
+	private async begin(): Promise<void> {
+		await this.pairing.ensureIdentity();
+		if (this.stopped) return;
+		if (Pairing.isDeviceLogin(this.plugin.settings.webdavUser)) {
+			// Also covers an already-paired computer: the first check succeeds and starts the backup.
+			this.setStatus("idle");
+			this.pairing.start();
+		} else {
+			this.paired = true; // a login written by the setup script
+			this.setStatus("idle");
+			this.startupTimer = window.setTimeout(() => this.requestReconcile("startup"), STARTUP_DELAY_MS);
+		}
+	}
+
+	/** Called by Pairing once the login works. */
+	onPaired(newlyPaired: boolean): void {
+		if (this.stopped) return;
+		this.paired = true;
+		this.failed = false;
+		this.setStatus("idle");
+		if (newlyPaired) new Notice("Vault backup: this computer is now paired with the backup server. Backing up now.", 8000);
+		this.requestReconcile(newlyPaired ? "paired" : "startup");
+	}
+
+	setPairState(state: PairState): void {
+		if (!this.paired && !this.stopped) this.setStatus(state);
+	}
+
+	/** Status of a login check, without throwing on HTTP errors. */
+	async probe(): Promise<number> {
+		const s = this.plugin.settings;
+		const r = await requestUrl({
+			url: this.base,
+			method: "PROPFIND",
+			headers: { Authorization: "Basic " + b64(s.webdavUser + ":" + s.webdavPass), Depth: "0" },
+			throw: false,
+		});
+		return r.status;
 	}
 
 	stop(): void {
 		this.stopped = true;
+		this.pairing.stop();
 		for (const t of this.pending.values()) window.clearTimeout(t);
 		this.pending.clear();
 		for (const t of [this.manifestTimer, this.retryTimer, this.intervalTimer, this.startupTimer]) {
@@ -201,6 +249,16 @@ export class Backup {
 
 	private onFailure(e: unknown): void {
 		console.error("[VLB backup]", e);
+		if (e instanceof DavError && e.status === 401 && Pairing.isDeviceLogin(this.plugin.settings.webdavUser)) {
+			// The server no longer knows this computer (its login was removed): pair again.
+			this.paired = false;
+			this.failed = false;
+			this.manifestLoaded = false;
+			this.knownDirs.clear();
+			this.setStatus("pairing");
+			this.pairing.start();
+			return;
+		}
 		this.lastError = errMsg(e);
 		if (!this.failed) new Notice("Vault backup: " + errMsg(e) + " — retrying in a minute", 8000);
 		this.failed = true;
@@ -361,7 +419,7 @@ export class Backup {
 	// ---- WebDAV --------------------------------------------------------------
 
 	private get base(): string {
-		let u = this.plugin.settings.webdavUrl.trim();
+		let u = this.plugin.settings.webdavUrl.trim() || SERVER_URL;
 		if (!u.endsWith("/")) u += "/";
 		return u;
 	}
@@ -396,7 +454,7 @@ export class Backup {
 			(method === "MKCOL" && r.status === 405) ||
 			(method === "MOVE" && r.status === 404) ||
 			(method === "GET" && r.status === 404);
-		if (!ok) throw new Error(`${method} ${sp}: HTTP ${r.status}`);
+		if (!ok) throw new DavError(`${method} ${sp}: HTTP ${r.status}`, r.status);
 		return r;
 	}
 
@@ -408,7 +466,10 @@ export class Backup {
 
 	private excluded(path: string): boolean {
 		const own = (this.plugin.manifest.dir ?? ".obsidian/plugins/vault-lock-backup") + "/data.json";
-		if (path === own || path === MANIFEST || path === TRASH || path.startsWith(TRASH + "/") || path === CONTROL || path.startsWith(CONTROL + "/")) return true;
+		if (path === own || path === MANIFEST) return true;
+		for (const reserved of [TRASH, CONTROL, PAIR_DIR]) {
+			if (path === reserved || path.startsWith(reserved + "/")) return true;
+		}
 		for (const line of this.plugin.settings.excludes.split("\n")) {
 			const p = line.trim();
 			if (p && path.startsWith(p)) return true;
@@ -426,9 +487,15 @@ export class Backup {
 			state === "off" ? "Backup: off" :
 			state === "syncing" ? "Backup: syncing…" :
 			state === "error" ? "Backup: ⚠ retrying" :
+			state === "pairing" ? "Backup: pairing…" :
+			state === "closed" ? "Backup: ⚠ not paired" :
 			"Backup: ✓" + t;
 		this.statusEl.setText(text);
-		this.statusEl.toggleClass("vlb-status-error", state === "error");
+		this.statusEl.toggleClass("vlb-status-error", state === "error" || state === "closed");
+		this.statusEl.setAttr("aria-label",
+			state === "pairing" ? "Pairing this computer with the backup server" :
+			state === "closed" ? "The server is not accepting new computers. Open pairing on the server: vlb open" :
+			state === "error" ? this.lastError : "");
 	}
 }
 
@@ -445,6 +512,12 @@ function stamp(): string {
 	const d = new Date();
 	const z = (n: number) => String(n).padStart(2, "0");
 	return `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}_${z(d.getHours())}${z(d.getMinutes())}${z(d.getSeconds())}`;
+}
+
+class DavError extends Error {
+	constructor(message: string, readonly status: number) {
+		super(message);
+	}
 }
 
 function errMsg(e: unknown): string {

@@ -6,7 +6,7 @@ export interface VLBSettings {
 	idleMinutes: number;
 	lockOnBlur: boolean;
 	privateFolder: string;
-	/** Backup runs whenever this is set. The setup script fills in the three server fields. */
+	/** Empty means the built-in server (src/server.ts). Pairing fills in user and pass. */
 	webdavUrl: string;
 	webdavUser: string;
 	webdavPass: string;

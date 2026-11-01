@@ -28,13 +28,13 @@ export default class VLBPlugin extends Plugin {
 		this.addCommand({ id: "lock", name: "Lock vault now", callback: () => void this.lock.lock() });
 		this.addCommand({ id: "change-passphrase", name: "Set or change passphrase", callback: () => new PassphraseModal(this.app, this).open() });
 		this.addCommand({ id: "backup-now", name: "Back up now", callback: () => {
-			if (!this.backup.enabled) { new Notice("Vault backup is not set up."); return; }
+			if (!this.backup.enabled) { new Notice("Vault backup: this computer isn't paired with the server yet."); return; }
 			this.backup.requestReconcile("manual");
 			new Notice("Backup started");
 		} });
 		this.addCommand({ id: "backup-reset", name: "Reset backup index (re-upload everything)", callback: () => this.backup.resetIndex() });
 		this.addCommand({ id: "backup-restore", name: "Restore vault from server (download missing/changed files)", callback: () => {
-			if (!this.backup.enabled) { new Notice("Vault backup is not set up."); return; }
+			if (!this.backup.enabled) { new Notice("Vault backup: this computer isn't paired with the server yet."); return; }
 			this.backup.restoreFromServer();
 			new Notice("Restore started");
 		} });

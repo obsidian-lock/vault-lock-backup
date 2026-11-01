@@ -1,15 +1,15 @@
 # Vault Lock & Backup: one-time setup on a Windows computer.
 #
-# Installs the plugin, plus BRAT to keep it up to date, into an Obsidian vault. If the
-# server details are given it also configures the backup, so the only thing left for
-# the user is choosing a passphrase. Run it in PowerShell:
+# Installs the plugin, plus BRAT, into an Obsidian vault and turns both on. The plugin then
+# pairs itself with the backup server on first start, so the only thing left for the user
+# is choosing a passphrase. Run it in PowerShell:
 #
-#   $env:VLB_URL='https://vault.example.com/'; $env:VLB_USER='obsidian'; $env:VLB_PASS='...'
 #   irm https://raw.githubusercontent.com/obsidian-lock/vault-lock-backup/main/install.ps1 | iex
 #
-# Without VLB_URL it only installs and the backup stays off; run it again with VLB_URL set
-# to turn the backup on. VLB_VAULT picks the vault folder when Obsidian knows several. VLB_NO_LAUNCH=1 skips opening Obsidian at the end. Safe to run again: it
-# keeps the passphrase and all other settings and only replaces the server fields.
+# Optional: set VLB_URL, VLB_USER and VLB_PASS first to use a fixed login instead of
+# pairing. VLB_VAULT picks the vault folder when Obsidian knows several. VLB_NO_LAUNCH=1 skips opening Obsidian at the end. Safe to run again: it
+# keeps the passphrase, the pairing and all other settings; with VLB_URL it only replaces
+# the server fields.
 
 & {
 	$ErrorActionPreference = 'Stop'
@@ -116,7 +116,7 @@
 			Set-Prop $data 'webdavPass' ([string]$env:VLB_PASS)
 			Write-Host "Backup server: $($env:VLB_URL.Trim())"
 		} else {
-			Write-Host 'No VLB_URL given: the backup stays off. Run this again with VLB_URL, VLB_USER and VLB_PASS set to turn it on.' -ForegroundColor Yellow
+			Write-Host 'Backup: the plugin pairs this computer with the backup server by itself when Obsidian starts.'
 		}
 		Write-JsonFile $dataPath $data
 

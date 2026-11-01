@@ -7,8 +7,8 @@
 
 An Obsidian plugin for one person, one computer, and a server you control:
 
-- **One-command install.** On Windows a single PowerShell command installs the plugin and
-  sets up the backup. The only thing left for the user is choosing a passphrase.
+- **Nothing to set up.** Install with BRAT and choose a passphrase. The plugin pairs itself
+  with your server: no server address or password to type, and none published anywhere.
 - **Lock screen.** A passphrase overlay at launch, after a few idle minutes, or on demand.
 - **Private folder.** One folder disappears from Obsidian whenever the vault is locked.
 - **One-way backup.** Every file in the vault is copied to your own WebDAV server as plain
@@ -30,6 +30,7 @@ An Obsidian plugin for one person, one computer, and a server you control:
 - [Set up](#set-up)
 - [Commands](#commands)
 - [How the backup works](#how-the-backup-works)
+- [Pairing](#pairing)
 - [Server setup](#server-setup)
 - [Controlling the plugin from the server](#controlling-the-plugin-from-the-server)
 - [Security model](#security-model)
@@ -51,31 +52,8 @@ An Obsidian plugin for one person, one computer, and a server you control:
 
 ## Install
 
-### Windows: one command
-
-Close Obsidian, open PowerShell, and paste this with your server's details filled in:
-
-```powershell
-$env:VLB_URL='https://vault.example.com/'; $env:VLB_USER='obsidian'; $env:VLB_PASS='YOUR-PASSWORD'
-irm https://raw.githubusercontent.com/obsidian-lock/vault-lock-backup/main/install.ps1 | iex
-```
-
-[`install.ps1`](install.ps1):
-
-- finds the vault Obsidian knows (it asks if there are several, or set `$env:VLB_VAULT`);
-- installs the latest release of this plugin and of
-  [BRAT](https://github.com/TfTHacker/obsidian42-brat), which installs future releases
-  when Obsidian starts;
-- writes the server details into the plugin's settings and turns both plugins on, leaving
-  your other plugins as they are.
-
-Running it again is safe. It keeps the passphrase and all other settings and only
-replaces the server fields. Keep the filled-in command private, because it contains the
-server password.
-
-### Any system: BRAT
-
-The plugin is not in the Obsidian community catalogue.
+The plugin is not in the Obsidian community catalogue; [BRAT](https://github.com/TfTHacker/obsidian42-brat)
+installs it from this repository and keeps it up to date.
 
 1. *Settings → Community plugins → Browse*, install **BRAT** and enable it.
 2. Open this link in your browser. Obsidian will ask BRAT to add the plugin:
@@ -84,12 +62,13 @@ The plugin is not in the Obsidian community catalogue.
    ```
    Or go to *BRAT settings → Add beta plugin* and enter `obsidian-lock/vault-lock-backup`.
 3. Enable **Vault Lock & Backup** under *Settings → Community plugins*.
-4. Close Obsidian and add the server details to
-   `<vault>/.obsidian/plugins/vault-lock-backup/data.json` (create the file if it isn't
-   there), then open Obsidian again:
-   ```json
-   { "webdavUrl": "https://vault.example.com/", "webdavUser": "obsidian", "webdavPass": "…" }
-   ```
+
+That's all. There are no server details to enter: see [Pairing](#pairing).
+
+**Windows, one command instead:** close Obsidian, open PowerShell and paste
+`irm https://raw.githubusercontent.com/obsidian-lock/vault-lock-backup/main/install.ps1 | iex`.
+[`install.ps1`](install.ps1) installs this plugin and BRAT into the vault Obsidian knows
+(it asks if there are several), turns both on, and opens Obsidian. Running it again is safe.
 
 **Manual install:** download `main.js`, `manifest.json` and `styles.css` from the
 [latest release](https://github.com/obsidian-lock/vault-lock-backup/releases/latest) into
@@ -104,13 +83,14 @@ only step.** If you close the prompt, it comes back at the next start.
 
 - If Obsidian says community plugins are turned off: *Settings → Community plugins → Turn
   on community plugins*.
-- The backup starts by itself. The status bar shows `Backup: ✓ HH:MM`.
+- The backup starts by itself. The status bar shows `Backup: pairing…` for up to a minute
+  the first time, then `Backup: ✓ HH:MM`.
 - To change the passphrase: *Settings → Vault Lock & Backup → Change passphrase*, or the
   *Set or change passphrase* command. It asks for the current one first.
 - Put notes that should disappear while locked in a top-level folder named `Private`.
 
 The plugin's settings are only about the passphrase and the lock. The backup has no
-settings there: the setup command configures it and it runs by itself.
+settings there: it pairs itself with the server and runs by itself.
 
 | Setting | Default |
 | --- | --- |
@@ -148,10 +128,11 @@ that no longer exists locally is moved to `_trash/`. It runs:
 Edits, renames and deletes are also sent within a couple of seconds as they happen. The
 reconcile is the safety net that catches anything those miss.
 
-What the server folder looks like:
+What this computer's folder on the server looks like (each paired computer has its own,
+`data/devices/<computer>-<id>/`, and sees only that):
 
 ```
-<WebDAV folder>/
+<computer's folder>/
 ├── Notes/…, Private/…           your vault as plain files, including .obsidian/
 ├── _manifest.json               index: path → modification time + size
 ├── _trash/<timestamp>/…         deleted, renamed-away, or overwritten files
@@ -165,45 +146,83 @@ Details:
 
 - The private folder is always stored as `Private/` on the server, even while it is hidden
   locally as `.Private/`.
-- Always skipped: the plugin's own `data.json` (it holds your passphrase hash and WebDAV
-  password), files over 100 MB (with a notice), and top-level `_manifest.json`, `_trash/`
-  and `_control/` in the vault, because those names are reserved on the server.
-- Status bar: `Backup: syncing…`, `Backup: ✓ 14:05`, `Backup: ⚠ retrying`, or
-  `Backup: off` when no server is set.
+- Always skipped: the plugin's own `data.json` (it holds your passphrase hash and this
+  computer's server key), files over 100 MB (with a notice), and top-level
+  `_manifest.json`, `_trash/`, `_control/` and `_pair/` in the vault, because those names
+  are reserved on the server.
+- Status bar: `Backup: syncing…`, `Backup: ✓ 14:05`, `Backup: ⚠ retrying`,
+  `Backup: pairing…`, or `Backup: ⚠ not paired` (the server isn't accepting new computers;
+  see [Pairing](#pairing)).
 - Nothing uploads while Obsidian is closed. The reconcile at the next start catches up.
+
+## Pairing
+
+A computer gets its own login on the server without anyone typing a password:
+
+1. On first start the plugin makes up a login and a random key and saves them in its
+   `data.json`.
+2. It drops a small request into the server's pairing inbox: an id, the computer's name,
+   and a bcrypt hash of the key. The key itself never leaves the computer.
+3. While pairing is open, the server accepts the **first** request it sees. That computer
+   gets its own login and its own folder, and pairing closes by itself.
+4. The plugin notices its login works and starts backing up.
+
+Every computer sees only its own folder. If a stranger installs the plugin and pairs while
+pairing is open, they get an empty folder of their own, never your notes, and your
+computer shows `Backup: ⚠ not paired`. Remove theirs and open pairing again.
+
+The inbox's login is built into the plugin and is public on purpose. It can only create
+files of up to 4 KB in the inbox, a separate container that can't reach the backups, and
+only while pairing is open.
+
+On the server, `vlb` manages it:
+
+| Command | What it does |
+| --- | --- |
+| `vlb status` | Pairing open or closed, and every paired computer with its folder and last check-in. |
+| `vlb open` | Accept the next computer that asks. |
+| `vlb open --into FOLDER` | The next computer continues an existing folder: a new or reinstalled laptop picks up where the old one left off (and can then use *Restore vault from server*). |
+| `vlb close` | Stop accepting computers. |
+| `vlb remove COMPUTER` | Revoke a computer's login (by id, login or folder). Its folder is kept. That computer goes back to asking to pair. |
+
+A computer whose login stops working (for example after `vlb remove`) asks to pair again
+every minute, so it reconnects by itself once pairing is open.
 
 ## Server setup
 
-Any WebDAV server works. The [`server/`](server) folder has a tested setup:
-[hacdias/webdav](https://github.com/hacdias/webdav) in Docker behind
-[Caddy](https://caddyserver.com), which provides HTTPS automatically.
+The [`server/`](server) folder is a tested setup: [hacdias/webdav](https://github.com/hacdias/webdav)
+in Docker (one container for the backups, one for the pairing inbox) behind
+[Caddy](https://caddyserver.com), which provides HTTPS automatically, plus `vlb`.
 
 ```sh
 mkdir -p /opt/obsidian-webdav && cd /opt/obsidian-webdav
-# copy server/docker-compose.yml and server/config.yml here
-docker run --rm ghcr.io/hacdias/webdav:latest bcrypt 'YOUR-PASSWORD'   # paste the hash into config.yml
-# docker-compose.yml: set the Docker network your reverse proxy is on
+# from server/: docker-compose.yml here (set the Docker network your reverse proxy is on),
+# vlb into /usr/local/bin, the two systemd units into /etc/systemd/system
+install -m 755 vlb /usr/local/bin/vlb
+vlb apply --no-restart                 # writes conf/webdav/ and conf/pair/ from state.json
 docker compose up -d
+systemctl daemon-reload && systemctl enable --now vlb-pair.timer   # handles the inbox every 15 s
+vlb open                               # accept the next computer that asks
 ```
 
-1. Point a DNS name (for example `vault.example.com`) at the server.
+1. Point a DNS name (for example `vault.example.com`) at the server, and put it in
+   `SERVER_URL` in [`src/server.ts`](src/server.ts) if you build your own copy.
 2. Add [`server/Caddyfile.snippet`](server/Caddyfile.snippet) to your Caddyfile and reload
-   Caddy. If you use another reverse proxy, **don't rewrite the `Host` header**: WebDAV
-   `MOVE` compares it with the destination URL.
-3. Check it. This should print XML, not `401`:
-   ```sh
-   curl -u obsidian:YOUR-PASSWORD -X PROPFIND https://vault.example.com/
-   ```
+   Caddy. It sends `/_pair/` to the inbox (4 KB limit) and everything else to the backups.
+   If you use another reverse proxy, **don't rewrite the `Host` header**: WebDAV `MOVE`
+   compares it with the destination URL.
+3. Install the plugin on a computer; `vlb status` shows it within a minute.
 
-The vault lands in `/opt/obsidian-webdav/data/`. Take a nightly snapshot of that folder to
-somewhere off the server, for example with restic or
-`tar czf /backups/vault-$(date +%F).tgz data`.
+Never edit `conf/` by hand: `vlb` regenerates it from `state.json`. Backups land in
+`/opt/obsidian-webdav/data/devices/`. Take a nightly snapshot of `data/`, `conf/` and
+`state.json` to somewhere off the server, for example with restic or
+`tar czf /backups/vault-$(date +%F).tgz data conf state.json`.
 
 ## Controlling the plugin from the server
 
-Everything happens in `_control/` inside the backup folder. The plugin reads it at the
-start of every reconcile (at startup and every 10 minutes by default) and writes
-`status.json` afterwards.
+Everything happens in `_control/` inside the computer's folder (on the server:
+`data/devices/<folder>/_control/`). The plugin reads it at the start of every reconcile (at
+startup and every 10 minutes by default) and writes `status.json` afterwards.
 
 **`config.json`**: any subset of these. The server's value wins and is saved on the
 computer.
@@ -244,7 +263,7 @@ nothing is lost on either side.
 **`status.json`**: written by the plugin.
 
 ```json
-{ "at": "2026-10-29T18:00:00.000Z", "version": "1.0.0", "locked": false,
+{ "at": "2026-10-29T18:00:00.000Z", "version": "1.3.0", "computer": "LAPTOP", "locked": false,
   "lastReconcile": { "reason": "interval", "files": 812, "uploaded": 3, "trashed": 0 },
   "lastError": null, "settings": { "idleMinutes": 5, "…": "…" },
   "commands": { "2026-10-29-d": { "ok": true, "at": "…", "detail": "4 files written" } } }
@@ -275,13 +294,14 @@ computer has stopped backing up.
 - **No encryption.** Notes, including the private folder, are plain files on disk and on the
   server. Anyone who can open the files, or delete the plugin's `data.json`, gets past the
   lock.
-- The WebDAV password is stored in plain text in `data.json`. That file is never uploaded.
-  PowerShell also keeps the setup command, password included, in its history file
-  (`%APPDATA%\Microsoft\Windows\PowerShell\PSReadLine\ConsoleHost_history.txt`).
-- **Whoever can write to the WebDAV folder controls the plugin.** They can change its
-  settings and use `pull` to overwrite notes. Local versions go to `_trash/` first, but
-  treat the WebDAV credentials as carefully as the vault itself. Serve the folder over
-  HTTPS only.
+- This computer's server key is stored in plain text in `data.json`. That file is never
+  uploaded.
+- **Whoever controls the server controls the plugin.** Anyone who can write to a
+  computer's folder can change its settings and use `pull` to overwrite notes. Local
+  versions go to `_trash/` first, but protect the server as carefully as the vault itself.
+  Serve it over HTTPS only.
+- The server's address is built into the plugin, so it is public. Pairing is what keeps
+  strangers out: see [Pairing](#pairing).
 
 To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
@@ -289,16 +309,17 @@ To report a vulnerability, see [SECURITY.md](SECURITY.md).
 
 - **Lost passphrase.** Close Obsidian. Delete
   `<vault>/.obsidian/plugins/vault-lock-backup/data.json` and rename `.Private` back to
-  `Private`. Deleting `data.json` also removes the server details, so run the setup command
-  again. Obsidian then asks for a new passphrase.
+  `Private`. Obsidian then asks for a new passphrase. Deleting `data.json` also deletes this
+  computer's pairing, so on the server run `vlb remove <old login>` and
+  `vlb open --into <its folder>` first: the computer then pairs again into its old folder.
 - **"Both Private and .Private exist".** This only happens if folders are created by hand.
   The plugin refuses to rename either one. Merge them manually.
 - **Don't keep the vault in OneDrive, iCloud Drive or Dropbox.** A second sync engine
   fighting over the `Private` ↔ `.Private` rename is the one thing that can corrupt this
   setup.
+- **`Backup: ⚠ not paired`.** The server isn't accepting new computers. Run `vlb status`,
+  remove any computer that isn't yours, then `vlb open`. The plugin asks again every minute.
 - **`Backup: ⚠ retrying`.** A notice shows the error, and the plugin retries every minute.
-  If the server address or password changed, run the setup command again with the new
-  values; it only replaces the server details.
 - **The setup command says "Setup failed".** It prints the reason. Fix it and run the same
   command again.
 - **The backup fails right after you create a new DNS name.** Your computer may have cached the
